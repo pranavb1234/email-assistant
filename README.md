@@ -1,8 +1,9 @@
 # AI Email Assistant
 #### Made by Pranav Bhatia
+  ```
 #### You may see a verification warning because our app uses your Gmail data for login.
 #### Just click on Advanced and click go to the https://email-assistant-beige.vercel.app
-
+```
 This project is an AI-powered email assistant that connects directly to your Gmail account. It allows users to read emails, delete emails, and generate replies using simple natural language prompts.
 
 ## How It Works
