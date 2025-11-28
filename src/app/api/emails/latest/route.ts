@@ -7,12 +7,20 @@ interface GmailMessage {
   id: string;
 }
 
+interface GmailPayload {
+  mimeType?: string;
+  body?: {
+    data?: string;
+  };
+  parts?: GmailPayload[];
+  headers?: Array<{ name: string; value: string }>;
+}
+
 interface GmailMessageDetail {
   id: string;
+  threadId?: string;
   snippet?: string;
-  payload?: {
-    headers?: Array<{ name: string; value: string }>;
-  };
+  payload?: GmailPayload;
 }
 
 function extractHeader(
@@ -24,11 +32,38 @@ function extractHeader(
   return header?.value;
 }
 
+function decodeBase64Url(data?: string): string {
+  if (!data) return "";
+  try {
+    const normalized = data.replace(/-/g, "+").replace(/_/g, "/");
+    return Buffer.from(normalized, "base64").toString("utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function extractPlainTextFromPayload(payload?: GmailPayload): string {
+  if (!payload) return "";
+
+  if (payload.mimeType === "text/plain" && payload.body?.data) {
+    return decodeBase64Url(payload.body.data);
+  }
+
+  if (payload.parts && payload.parts.length > 0) {
+    for (const part of payload.parts) {
+      const text = extractPlainTextFromPayload(part);
+      if (text.trim()) return text;
+    }
+  }
+
+  return "";
+}
+
 async function generateReplyWithGemini(
   input: {
     from: string;
     subject: string;
-    snippet: string;
+    body: string;
   },
   debug: string[]
 ): Promise<string | null> {
@@ -38,10 +73,10 @@ async function generateReplyWithGemini(
     return null;
   }
 
-  const prompt = `You are an AI email assistant. Draft a clear, concise, professional email reply to the message below.\n\nReply requirements:\n- Write the reply as if it will be sent directly to the sender.\n- Include a short greeting and a polite sign-off.\n- Do NOT explain what you are doing.\n- Do NOT include headings like \"Here is your reply\" or \"Explanation\".\n- Output only the email text, nothing else.\n\nOriginal message:\nSender: ${
+  const prompt = `You are an AI email assistant. Draft a clear, concise, professional email reply to the message below.\n\nReply requirements:\n- Write the reply as if it will be sent directly to the sender.\n- Include a short greeting and a polite sign-off.\n- Do NOT explain what you are doing.\n- Do NOT include headings like \"Here is your reply\" or \"Explanation\".\n- Output only the email text, nothing else.\n- Use the full email body below as context.\n\nOriginal message:\nSender: ${
     input.from
-  }\nSubject: ${input.subject}\nEmail preview: ${
-    input.snippet || "(no preview available)"
+  }\nSubject: ${input.subject}\nEmail body: ${
+    input.body || "(no body available)"
   }\n\nWrite the reply now:`;
 
   try {
@@ -141,15 +176,24 @@ export async function GET() {
         const from = extractHeader(headers, "From") || "Unknown";
         const subject = extractHeader(headers, "Subject") || "(no subject)";
         const snippet = d.snippet || "";
+        const bodyText = extractPlainTextFromPayload(d.payload) || snippet;
 
         const base = {
           id: d.id,
+          threadId: d.threadId,
           from,
           subject,
           snippet,
         };
 
-        const aiReply = await generateReplyWithGemini(base, geminiDebug);
+        const aiReply = await generateReplyWithGemini(
+          {
+            from,
+            subject,
+            body: bodyText,
+          },
+          geminiDebug
+        );
 
         return {
           ...base,

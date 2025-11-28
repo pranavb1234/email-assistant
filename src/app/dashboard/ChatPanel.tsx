@@ -10,6 +10,7 @@ interface Message {
 
 interface EmailItem {
   id: string;
+  threadId?: string | null;
   from: string;
   subject: string;
   snippet: string;
@@ -51,6 +52,7 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
   const [emails, setEmails] = useState<EmailItem[]>([]);
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isSendingReply, setIsSendingReply] = useState(false);
 
   useEffect(() => {
     setMessages([...initialAssistantGreeting(userLabel), commandHelp]);
@@ -180,8 +182,8 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
 
       appendActivity(summary);
       return summary;
-    } catch (error: any) {
-      const message = error?.message || "Unknown error";
+    } catch (error) {
+      const message = (error as Error)?.message || "Unknown error";
       appendActivity(`Delete request failed: ${message}`);
       return "I ran into a problem while trying to delete that email. Please try again.";
     } finally {
@@ -224,11 +226,11 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
       setSelectedEmailId(fetchedEmails[0]?.id ?? null);
 
       return "Ive loaded your latest emails. Use the cards on the right to review each email and its suggested reply.";
-    } catch (error: any) {
+    } catch (error) {
       appendActivity(
-        `Unexpected error while fetching emails: ${error?.message || String(
-          error
-        )}`
+        `Unexpected error while fetching emails: ${
+          (error as Error)?.message || String(error)
+        }`
       );
       return "I ran into a problem while trying to fetch your emails.";
     } finally {
@@ -322,9 +324,11 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
             return basicHeuristicRoute(trimmed);
           }
         }
-      } catch (error: any) {
+      } catch (error) {
         appendActivity(
-          `AI router request failed: ${error?.message || String(error)}. Falling back to simple rules.`
+          `AI router request failed: ${
+            (error as Error)?.message || String(error)
+          }. Falling back to simple rules.`
         );
         return basicHeuristicRoute(trimmed);
       }
@@ -345,6 +349,52 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
   };
 
   const selectedEmail = emails.find((e) => e.id === selectedEmailId) ?? null;
+
+  const sendSelectedReply = async (email: EmailItem) => {
+    if (!email.aiReply) {
+      appendActivity("No AI reply available to send for this email.");
+      return;
+    }
+
+    appendActivity(`Sending reply to ${email.from}…`);
+
+    try {
+      setIsSendingReply(true);
+      const res = await fetch("/api/emails/reply", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messageId: email.id,
+          threadId: email.threadId,
+          to: email.from,
+          subject: email.subject,
+          replyText: email.aiReply,
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.success) {
+        const reason = data?.error || res.statusText || "Unknown error";
+        appendActivity(`Failed to send reply: ${reason}`);
+        return;
+      }
+
+      appendActivity(
+        `Reply sent to ${email.from} with subject "${email.subject || "(no subject)"}".`
+      );
+    } catch (error) {
+      appendActivity(
+        `Unexpected error while sending reply: ${
+          (error as Error)?.message || String(error)
+        }`
+      );
+    } finally {
+      setIsSendingReply(false);
+    }
+  };
 
   return (
     <div className="grid h-full min-h-[calc(100vh-7rem)] grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)] md:gap-6">
@@ -425,7 +475,7 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
               })}
               {emails.length === 0 && (
                 <p className="text-[11px] text-zinc-400 dark:text-zinc-500">
-                  Ask me to "read my latest emails" to load your inbox.
+                  Ask me to &quot;read my latest emails&quot; to load your inbox.
                 </p>
               )}
             </div>
@@ -445,8 +495,18 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
                     {selectedEmail.snippet?.replace(/\s+/g, " ").trim()}
                   </div>
                   <div className="mt-2 rounded-lg bg-zinc-50 p-2 text-[11px] text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
-                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-                      Suggested reply
+                    <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                      <span>Suggested reply</span>
+                      {selectedEmail.aiReply && (
+                        <button
+                          type="button"
+                          disabled={isSendingReply}
+                          onClick={() => sendSelectedReply(selectedEmail)}
+                          className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                        >
+                          {isSendingReply ? "Sending…" : "Ready to send"}
+                        </button>
+                      )}
                     </div>
                     {selectedEmail.aiReply ? (
                       <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-800 dark:text-zinc-100">

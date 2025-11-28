@@ -98,9 +98,11 @@ export async function POST(req: Request) {
   }
 
   const command =
-    body && typeof body === "object" && "command" in body &&
-    typeof (body as any).command === "string"
-      ? (body as any).command.trim()
+    body &&
+    typeof body === "object" &&
+    "command" in body &&
+    typeof (body as { command?: unknown }).command === "string"
+      ? (body as { command?: string }).command.trim()
       : "";
 
   if (!command) {
@@ -159,7 +161,7 @@ User command: "${command}"`;
     const parsed = sanitizeModelJson(text) ?? basicHeuristic(command);
 
     return NextResponse.json<InterpretResponse>(parsed);
-  } catch (err: unknown) {
+  } catch {
     // On any Gemini error, fall back to heuristic so the client still gets a response.
     const fallback = basicHeuristic(command);
     return NextResponse.json<InterpretResponse>(fallback);
