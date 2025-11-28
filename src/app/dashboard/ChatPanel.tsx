@@ -80,6 +80,37 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
     return { keyword: normalized, field: "subject" };
   };
 
+  const basicHeuristicRoute = async (trimmed: string): Promise<string> => {
+    const lower = trimmed.toLowerCase();
+
+    if (lower.includes("read") && lower.includes("email")) {
+      appendActivity("Requested: Read latest emails (heuristic).");
+      return fetchLatestEmails();
+    }
+
+    if (lower.includes("reply") || lower.includes("respond")) {
+      appendActivity("Queued action: Draft reply (heuristic).");
+      return Promise.resolve(
+        "I can help you draft smart replies. In the next step, I'll be able to send them via Gmail."
+      );
+    }
+
+    if (lower.includes("delete") || lower.includes("remove")) {
+      appendActivity("Requested: Delete a specific email (heuristic).");
+      return deleteEmail(trimmed);
+    }
+
+    if (lower.includes("help") || lower.includes("command")) {
+      appendActivity("Displayed help and available commands (heuristic).");
+      return Promise.resolve(commandHelp.text);
+    }
+
+    appendActivity("Received a free-form request. Will map to email actions later (heuristic).");
+    return Promise.resolve(
+      "I've received your request. I'll connect this to more advanced email actions soon."
+    );
+  };
+
   const findLocalMatch = (
     keyword: string,
     field: CriterionField
@@ -95,8 +126,14 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
     return candidates[0];
   };
 
-  const deleteEmail = async (rawInput: string): Promise<string> => {
-    const params = extractDeletionParams(rawInput);
+  const deleteEmail = async (
+    rawInput: string,
+    overrideParams?: { keyword?: string; field?: CriterionField }
+  ): Promise<string> => {
+    const params = overrideParams?.keyword && overrideParams.field
+      ? { keyword: overrideParams.keyword, field: overrideParams.field }
+      : extractDeletionParams(rawInput);
+
     if (!params || !params.keyword) {
       return "Please tell me which email to delete (mention the subject or sender).";
     }
@@ -207,58 +244,104 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
     const nextBaseId = messages.length + 1;
     const userMessage: Message = { id: nextBaseId, role: "user", text: trimmed };
 
-    const lower = trimmed.toLowerCase();
-    let assistantPromise: Promise<string> | null = null;
-
-    if (lower.includes("read") && lower.includes("email")) {
-      appendActivity("Requested: Read latest emails.");
-      assistantPromise = fetchLatestEmails();
-    } else if (lower.includes("reply") || lower.includes("respond")) {
-      appendActivity("Queued action: Draft reply.");
-      assistantPromise = Promise.resolve(
-        "I can help you draft smart replies. In the next step, I'll be able to send them via Gmail."
-      );
-    } else if (lower.includes("delete") || lower.includes("remove")) {
-      appendActivity("Requested: Delete a specific email.");
-      assistantPromise = deleteEmail(trimmed);
-    } else if (lower.includes("help") || lower.includes("command")) {
-      appendActivity("Displayed help and available commands.");
-      assistantPromise = Promise.resolve(commandHelp.text);
-    } else {
-      appendActivity("Received a free-form request. Will map to email actions later.");
-      assistantPromise = Promise.resolve(
-        "I've received your request. I'll connect this to more advanced email actions soon."
-      );
-    }
-
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
-    if (assistantPromise) {
-      const thisAssistantId = nextBaseId + 1;
-      const placeholder: Message = {
-        id: thisAssistantId,
-        role: "assistant",
-        text: lower.includes("read") && lower.includes("email")
-          ? "Let me pull your latest emails…"
-          : "Let me think about that…",
-      };
+    const thisAssistantId = nextBaseId + 1;
+    const placeholder: Message = {
+      id: thisAssistantId,
+      role: "assistant",
+      text: "Let me think about that…",
+    };
 
-      setMessages((prev) => [...prev, placeholder]);
+    setMessages((prev) => [...prev, placeholder]);
 
-      const finalText = await assistantPromise;
+    const run = async (): Promise<string> => {
+      appendActivity("Sending your command to the AI router…");
 
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === thisAssistantId
-            ? {
-                ...m,
-                text: finalText,
-              }
-            : m
-        )
-      );
-    }
+      try {
+        const res = await fetch("/api/assistant/interpret", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ command: trimmed }),
+        });
+
+        const data = await res
+          .json()
+          .catch(() => ({ action: "unknown" as const }));
+
+        const action = data.action as
+          | "fetch_latest"
+          | "delete_email"
+          | "help"
+          | "draft_reply"
+          | "unknown"
+          | undefined;
+
+        if (!res.ok || !action) {
+          appendActivity("AI router returned an invalid response. Falling back to simple rules.");
+          return basicHeuristicRoute(trimmed);
+        }
+
+        switch (action) {
+          case "fetch_latest": {
+            appendActivity("AI router mapped this to: read latest emails.");
+            return fetchLatestEmails();
+          }
+          case "delete_email": {
+            const deleteParams = data.deleteParams as
+              | { keyword?: string; field?: CriterionField }
+              | undefined;
+
+            if (deleteParams?.keyword && deleteParams.field) {
+              appendActivity(
+                `AI router mapped this to: delete email (field=${deleteParams.field}, keyword="${deleteParams.keyword}").`
+              );
+              return deleteEmail(trimmed, deleteParams);
+            }
+
+            appendActivity(
+              "AI router suggested delete, but without clear parameters. Falling back to simple delete parsing."
+            );
+            return deleteEmail(trimmed);
+          }
+          case "help": {
+            appendActivity("AI router mapped this to: help / show commands.");
+            return Promise.resolve(commandHelp.text);
+          }
+          case "draft_reply": {
+            appendActivity("AI router mapped this to: draft a reply.");
+            return Promise.resolve(
+              "I can help you draft smart replies. In the next step, I'll be able to send them via Gmail."
+            );
+          }
+          default: {
+            appendActivity(
+              "AI router could not confidently map this command. Falling back to simple rules."
+            );
+            return basicHeuristicRoute(trimmed);
+          }
+        }
+      } catch (error: any) {
+        appendActivity(
+          `AI router request failed: ${error?.message || String(error)}. Falling back to simple rules.`
+        );
+        return basicHeuristicRoute(trimmed);
+      }
+    };
+
+    const finalText = await run();
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === thisAssistantId
+          ? {
+              ...m,
+              text: finalText,
+            }
+          : m
+      )
+    );
   };
 
   const selectedEmail = emails.find((e) => e.id === selectedEmailId) ?? null;
