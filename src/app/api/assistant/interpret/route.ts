@@ -97,13 +97,21 @@ export async function POST(req: Request) {
     );
   }
 
-  const command =
-    body &&
-    typeof body === "object" &&
-    "command" in body &&
-    typeof (body as { command?: unknown }).command === "string"
-      ? (body as { command?: string }).command.trim()
-      : "";
+  // const command =
+  //   body &&
+  //   typeof body === "object" &&
+  //   "command" in body &&
+  //   typeof (body as { command?: unknown }).command === "string"
+  //     ? (body as { command?: string }).command.trim()
+  //     : "";
+    
+    const command =
+  typeof body === "object" &&
+  body &&
+  typeof (body as any).command === "string"
+    ? (body as any).command.trim()
+    : "";
+
 
   if (!command) {
     return NextResponse.json(
