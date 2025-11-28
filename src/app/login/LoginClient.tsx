@@ -13,7 +13,7 @@ export default function LoginClient({ errorMessage }: LoginClientProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-800 text-zinc-50">
-      <main className="mx-auto flex min-h-screen max-w-5xl items-center px-6 py-10">
+      <main className="mx-auto flex min-h-screen max-w-5xl flex-col items-stretch gap-10 px-4 py-8 sm:px-6 sm:py-10 lg:flex-row lg:items-center">
         {/* Left side: brand + marketing copy */}
         <section className="max-w-xl space-y-6">
           <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-zinc-900/60 px-3 py-1 text-xs font-medium text-zinc-200 shadow-sm">
@@ -60,7 +60,7 @@ export default function LoginClient({ errorMessage }: LoginClientProps) {
         </section>
 
         {/* Right side: login card */}
-        <section className="ml-auto flex w-full max-w-sm justify-end">
+        <section className="mt-8 flex w-full max-w-md justify-end sm:mt-10 lg:mt-0 lg:ml-auto lg:max-w-sm">
           <div className="w-full rounded-2xl border border-white/10 bg-zinc-950/70 p-7 shadow-xl backdrop-blur-xl">
             <div className="mb-6 flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 via-sky-400 to-violet-500 text-zinc-950 shadow-md">
