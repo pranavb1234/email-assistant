@@ -1,0 +1,169 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+interface GmailMessage {
+  id: string;
+}
+
+interface GmailMessageDetail {
+  id: string;
+  snippet?: string;
+  payload?: {
+    headers?: Array<{ name: string; value: string }>;
+  };
+}
+
+function extractHeader(
+  headers: Array<{ name: string; value: string }> | undefined,
+  name: string
+): string | undefined {
+  if (!headers) return undefined;
+  const header = headers.find((h) => h.name.toLowerCase() === name.toLowerCase());
+  return header?.value;
+}
+
+async function generateReplyWithGemini(
+  input: {
+    from: string;
+    subject: string;
+    snippet: string;
+  },
+  debug: string[]
+): Promise<string | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    debug.push("GEMINI_API_KEY is not set; skipping AI replies.");
+    return null;
+  }
+
+  const prompt = `You are an AI email assistant. Draft a clear, concise, professional email reply to the message below.\n\nReply requirements:\n- Write the reply as if it will be sent directly to the sender.\n- Include a short greeting and a polite sign-off.\n- Do NOT explain what you are doing.\n- Do NOT include headings like \"Here is your reply\" or \"Explanation\".\n- Output only the email text, nothing else.\n\nOriginal message:\nSender: ${
+    input.from
+  }\nSubject: ${input.subject}\nEmail preview: ${
+    input.snippet || "(no preview available)"
+  }\n\nWrite the reply now:`;
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ],
+    });
+
+    const text = await result.response.text();
+
+    if (!text) {
+      debug.push("Gemini SDK returned an empty response.");
+    }
+
+    return text || null;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    debug.push(`Gemini API threw: ${message}`);
+    return null;
+  }
+}
+
+export async function GET() {
+  const session = await getServerSession(authOptions);
+
+  if (!session) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const accessToken = (session as { accessToken?: string }).accessToken;
+
+  if (!accessToken) {
+    return NextResponse.json({ error: "Missing access token" }, { status: 401 });
+  }
+
+  const geminiDebug: string[] = [];
+
+  try {
+    const listRes = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&labelIds=INBOX",
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: "no-store",
+      }
+    );
+
+    if (!listRes.ok) {
+      const text = await listRes.text();
+      return NextResponse.json(
+        { error: "Failed to list messages", details: text },
+        { status: 500 }
+      );
+    }
+
+    const listData = await listRes.json();
+    const messages: GmailMessage[] = listData.messages || [];
+
+    if (messages.length === 0) {
+      return NextResponse.json({ emails: [] });
+    }
+
+    const detailsResults = await Promise.all(
+      messages.map(async (msg) => {
+        const detailRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=full`,
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+            cache: "no-store",
+          }
+        );
+
+        if (!detailRes.ok) return null;
+
+        const detail = (await detailRes.json()) as GmailMessageDetail;
+        return detail;
+      })
+    );
+
+    const details: GmailMessageDetail[] = detailsResults.filter(
+      (d): d is GmailMessageDetail => d !== null
+    );
+
+    const summaries = await Promise.all(
+      details.map(async (d) => {
+        const headers = d.payload?.headers;
+        const from = extractHeader(headers, "From") || "Unknown";
+        const subject = extractHeader(headers, "Subject") || "(no subject)";
+        const snippet = d.snippet || "";
+
+        const base = {
+          id: d.id,
+          from,
+          subject,
+          snippet,
+        };
+
+        const aiReply = await generateReplyWithGemini(base, geminiDebug);
+
+        return {
+          ...base,
+          aiReply,
+        };
+      })
+    );
+
+    return NextResponse.json({ emails: summaries, geminiDebug });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json(
+      { error: "Unexpected error while fetching emails", details: message },
+      { status: 500 }
+    );
+  }
+}
