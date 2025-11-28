@@ -33,7 +33,7 @@ const initialAssistantGreeting = (userLabel: string): Message[] => [
     id: 2,
     role: "assistant",
     text:
-      "You can ask me to: \n• Read recent emails \n• Draft replies \n• Delete or archive messages \n\nFor now, I\'ll simulate these actions and show updates on the right.",
+      "You can ask me to: \n• Read recent emails \n• Delete emails by subject \n• Draft replies",
   },
 ];
 
@@ -41,7 +41,7 @@ const commandHelp: Message = {
   id: 3,
   role: "assistant",
   text:
-    "Try commands like: \n- \"read my latest emails\" \n- \"draft a reply to a client\" \n- \"delete spam emails\"",
+    "Try commands like: \n- \"read recent emails\" \n- \"delete the email with subject: Invoice\" \n- \"draft a reply to this email\"",
 };
 
 export function ChatPanel({ userLabel }: ChatPanelProps) {
