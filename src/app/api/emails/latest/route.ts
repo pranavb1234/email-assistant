@@ -59,6 +59,53 @@ function extractPlainTextFromPayload(payload?: GmailPayload): string {
   return "";
 }
 
+async function summarizeEmailWithGemini(
+  input: {
+    from: string;
+    subject: string;
+    body: string;
+  },
+  debug: string[]
+): Promise<string | null> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    debug.push("GEMINI_API_KEY is not set; skipping AI summaries.");
+    return null;
+  }
+
+  const prompt = `You are an email summarization assistant. Given an email, write a concise, user-friendly summary that tells the recipient what the email is about and what (if anything) they need to do.\n\nSummary requirements:\n- 1 to 3 short sentences, max ~60 words total.\n- Start with the key purpose of the email.\n- Mention any requests, deadlines, or important decisions.\n- Do NOT include greetings or sign-offs.\n- Do NOT speak in the first person as the sender.\n- Output only the summary text, nothing else.\n\nOriginal message:\nSender: ${
+    input.from
+  }\nSubject: ${input.subject}\nEmail body: ${
+    input.body || "(no body available)"
+  }\n\nWrite the summary now:`;
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const result = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: prompt }],
+        },
+      ],
+    });
+
+    const text = (await result.response.text())?.trim();
+
+    if (!text) {
+      debug.push("Gemini SDK returned an empty summary.");
+    }
+
+    return text || null;
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    debug.push(`Gemini summary API threw: ${message}`);
+    return null;
+  }
+}
+
 async function generateReplyWithGemini(
   input: {
     from: string;
@@ -73,7 +120,7 @@ async function generateReplyWithGemini(
     return null;
   }
 
-  const prompt = `You are an AI email assistant. Draft a clear, concise, professional email reply to the message below.\n\nReply requirements:\n- Write the reply as if it will be sent directly to the sender.\n- Include a short greeting and a polite sign-off.\n- Do NOT explain what you are doing.\n- Do NOT include headings like \"Here is your reply\" or \"Explanation\".\n- Output only the email text, nothing else.\n- Use the full email body below as context.\n\nOriginal message:\nSender: ${
+  const prompt = `You are an AI email assistant. Draft a clear, concise, professional email reply to the message below.\n\nReply requirements:\n- Write the reply as if it will be sent directly to the sender.\n- Include a short greeting that addresses the sender appropriately.\n- Keep the body focused and actionable (2-5 short paragraphs).\n- End with a natural, courteous sign-off.\n- Do NOT explain what you are doing.\n- Do NOT include headings like \"Here is your reply\" or \"Explanation\".\n- Output only the email text, nothing else.\n- Use the full email body below as context.\n\nOriginal message:\nSender: ${
     input.from
   }\nSubject: ${input.subject}\nEmail body: ${
     input.body || "(no body available)"
@@ -92,16 +139,16 @@ async function generateReplyWithGemini(
       ],
     });
 
-    const text = await result.response.text();
+    const text = (await result.response.text())?.trim();
 
     if (!text) {
-      debug.push("Gemini SDK returned an empty response.");
+      debug.push("Gemini SDK returned an empty reply.");
     }
 
     return text || null;
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    debug.push(`Gemini API threw: ${message}`);
+    debug.push(`Gemini reply API threw: ${message}`);
     return null;
   }
 }
@@ -175,15 +222,24 @@ export async function GET() {
         const headers = d.payload?.headers;
         const from = extractHeader(headers, "From") || "Unknown";
         const subject = extractHeader(headers, "Subject") || "(no subject)";
-        const snippet = d.snippet || "";
-        const bodyText = extractPlainTextFromPayload(d.payload) || snippet;
+        const rawSnippet = d.snippet || "";
+        const bodyText = extractPlainTextFromPayload(d.payload) || rawSnippet;
+
+        const summary = await summarizeEmailWithGemini(
+          {
+            from,
+            subject,
+            body: bodyText,
+          },
+          geminiDebug
+        );
 
         const base = {
           id: d.id,
           threadId: d.threadId,
           from,
           subject,
-          snippet,
+          snippet: summary || rawSnippet,
         };
 
         const aiReply = await generateReplyWithGemini(

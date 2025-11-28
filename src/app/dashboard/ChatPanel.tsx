@@ -517,6 +517,9 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
         <div className="flex-1 overflow-hidden">
           <div className="mb-2 flex items-center justify-between border-b border-zinc-200 pb-2 text-[11px] font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
             <span>Inbox (latest)</span>
+            <span className="text-[9px] font-normal uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+               Summary
+            </span>
           </div>
           <div className="flex h-[calc(100%-2.5rem)] gap-3 overflow-hidden">
             <div className="flex-1 space-y-2 overflow-y-auto pr-1">
@@ -567,6 +570,9 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
                   <div className="mb-1 text-[10px] text-zinc-500 dark:text-zinc-400">
                     Subject: <span className="font-medium">{selectedEmail.subject || "(no subject)"}</span>
                   </div>
+                  <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                    AI summary
+                  </div>
                   <div className="mb-2 whitespace-pre-wrap text-[11px] text-zinc-700 dark:text-zinc-200">
                     {selectedEmail.snippet?.replace(/\s+/g, " ").trim()}
                   </div>
@@ -581,7 +587,7 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
                             onClick={() => sendSelectedReply(selectedEmail)}
                             className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
                           >
-                            {isSendingReply ? "Sending…" : "Ready to send"}
+                            {isSendingReply ? "Sending…" : "Send"}
                           </button>
                         )}
                         {selectedEmail.aiReply && (

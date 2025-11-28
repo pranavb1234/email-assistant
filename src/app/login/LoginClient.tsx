@@ -23,32 +23,40 @@ export default function LoginClient({ errorMessage }: LoginClientProps) {
 
           <div className="space-y-4">
             <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-              Turn your inbox
+               Turn your inbox
               <span className="bg-gradient-to-r from-emerald-300 via-sky-300 to-violet-300 bg-clip-text text-transparent">
                 {" "}
                 into a superpower.
               </span>
             </h1>
             <p className="max-w-lg text-sm text-zinc-300 sm:text-base">
-              AI Email Assistant helps you draft replies, summarize long threads, and stay
-              on top of what actually matters  all directly from your Gmail inbox.
+              AI Email Assistant helps you draft replies, summarize long threads, and focus on what truly matters &mdash; all directly from your Gmail inbox.
             </p>
           </div>
 
           <div className="grid gap-4 text-xs text-zinc-300 sm:grid-cols-3 sm:text-sm">
             <div className="rounded-xl border border-white/5 bg-zinc-900/50 p-3">
-              <p className="text-2xl font-semibold text-emerald-300">2x</p>
-              <p className="mt-1 text-xs text-zinc-400">Faster replies to important emails</p>
+              <h3 className="text-sm font-semibold text-emerald-300 sm:text-base">⚡ 2x Faster</h3>
+              <p className="mt-1 text-[11px] text-zinc-300">
+                Respond to important emails twice as fast with pre-generated replies and quick-send options.
+              </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-zinc-900/50 p-3">
-              <p className="text-2xl font-semibold text-sky-300">0</p>
-              <p className="mt-1 text-xs text-zinc-400">Manual sorting of low2priority threads</p>
+              <h3 className="text-sm font-semibold text-sky-300 sm:text-base">🧠 No More Email Overload</h3>
+              <p className="mt-1 text-[11px] text-zinc-300">
+                The assistant automatically interprets your intent and performs the right email action.
+              </p>
             </div>
             <div className="rounded-xl border border-white/5 bg-zinc-900/50 p-3">
-              <p className="text-2xl font-semibold text-violet-300">24/7</p>
-              <p className="mt-1 text-xs text-zinc-400">Assistant that never gets tired</p>
+              <h3 className="text-sm font-semibold text-violet-300 sm:text-base">🕒 24/7 Availability</h3>
+              <p className="mt-1 text-[11px] text-zinc-300">
+                Your personal email assistant that never gets tired, always ready to read, summarize, or reply.
+              </p>
             </div>
           </div>
+          <p className="pt-2 text-[10px] text-zinc-400">
+            made with love by Pranav Bhatia
+          </p>
         </section>
 
         {/* Right side: login card */}

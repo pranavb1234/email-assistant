@@ -2,6 +2,7 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { ChatPanel } from "./ChatPanel";
+import { LogoutButton } from "./LogoutButton";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -28,9 +29,12 @@ export default async function DashboardPage() {
               Connected as {user?.email || user?.name || "Google user"}
             </p>
           </div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-[10px] font-medium text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-            <span>Securely connected</span>
+          <div className="flex items-center gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full border border-zinc-200 bg-white px-3 py-1 text-[10px] font-medium text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+              <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+              <span>Securely connected</span>
+            </div>
+            <LogoutButton />
           </div>
         </div>
       </header>
