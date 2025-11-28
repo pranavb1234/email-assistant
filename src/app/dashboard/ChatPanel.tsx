@@ -53,6 +53,10 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
   const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSendingReply, setIsSendingReply] = useState(false);
+  const [isEditingReply, setIsEditingReply] = useState(false);
+  const [replyDraft, setReplyDraft] = useState("");
+  const [refinePrompt, setRefinePrompt] = useState("");
+  const [isRefiningReply, setIsRefiningReply] = useState(false);
 
   useEffect(() => {
     setMessages([...initialAssistantGreeting(userLabel), commandHelp]);
@@ -350,9 +354,75 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
 
   const selectedEmail = emails.find((e) => e.id === selectedEmailId) ?? null;
 
+  const refineReplyWithAI = async (email: EmailItem) => {
+    if (!replyDraft.trim()) {
+      appendActivity("Nothing to refine yet. Please type or paste a reply first.");
+      return;
+    }
+
+    appendActivity("Refining your reply with AI…");
+
+    try {
+      setIsRefiningReply(true);
+      const res = await fetch("/api/emails/refine", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          currentReply: replyDraft,
+          instructions: refinePrompt,
+          emailContext: {
+            from: email.from,
+            subject: email.subject,
+            snippet: email.snippet,
+          },
+        }),
+      });
+
+      const data = (await res.json().catch(() => ({}))) as {
+        refinedReply?: string;
+        error?: string;
+      };
+
+      if (!res.ok || !data.refinedReply) {
+        const reason = data.error || res.statusText || "Unknown error";
+        appendActivity(`Refine with AI failed: ${reason}`);
+        return;
+      }
+
+      setReplyDraft(data.refinedReply);
+      appendActivity("Updated reply draft using AI refinement.");
+    } catch (error) {
+      appendActivity(
+        `Unexpected error while refining reply: ${
+          (error as Error)?.message || String(error)
+        }`
+      );
+    } finally {
+      setIsRefiningReply(false);
+    }
+  };
+
+  const applyReplyDraft = (email: EmailItem) => {
+    const trimmed = replyDraft.trim();
+    if (!trimmed) {
+      appendActivity("Cannot apply an empty reply draft.");
+      return;
+    }
+
+    setEmails((prev) =>
+      prev.map((e) => (e.id === email.id ? { ...e, aiReply: trimmed } : e))
+    );
+    appendActivity("Applied edited reply as the new suggested reply.");
+    setIsEditingReply(false);
+  };
+
   const sendSelectedReply = async (email: EmailItem) => {
-    if (!email.aiReply) {
-      appendActivity("No AI reply available to send for this email.");
+    const effectiveText = email.aiReply?.trim();
+
+    if (!effectiveText) {
+      appendActivity("No reply text available to send for this email.");
       return;
     }
 
@@ -370,7 +440,7 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
           threadId: email.threadId,
           to: email.from,
           subject: email.subject,
-          replyText: email.aiReply,
+          replyText: effectiveText,
         }),
       });
 
@@ -397,7 +467,8 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
   };
 
   return (
-    <div className="grid h-full min-h-[calc(100vh-7rem)] grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)] md:gap-6">
+    <>
+      <div className="grid h-full min-h-[calc(100vh-7rem)] grid-cols-1 gap-4 md:grid-cols-[320px_minmax(0,1fr)] md:gap-6">
       <section className="flex h-full flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 text-sm text-zinc-900 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 md:sticky md:top-4 md:h-[calc(100vh-8rem)]">
         <div className="mb-2 flex items-center justify-between border-b border-zinc-200 pb-2 text-xs font-medium uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
           <span>Chat</span>
@@ -455,7 +526,12 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
                   <button
                     key={email.id}
                     type="button"
-                    onClick={() => setSelectedEmailId(email.id)}
+                    onClick={() => {
+                      setSelectedEmailId(email.id);
+                      setIsEditingReply(false);
+                      setReplyDraft("");
+                      setRefinePrompt("");
+                    }}
                     className={`w-full rounded-xl border px-3 py-2 text-left text-[11px] transition ${{
                       true: "border-zinc-900 bg-white shadow-sm dark:border-zinc-100 dark:bg-zinc-900",
                       false: "border-zinc-200 bg-white/80 hover:bg-white dark:border-zinc-800 dark:bg-zinc-900/60 dark:hover:bg-zinc-900",
@@ -497,19 +573,35 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
                   <div className="mt-2 rounded-lg bg-zinc-50 p-2 text-[11px] text-zinc-800 dark:bg-zinc-950 dark:text-zinc-100">
                     <div className="mb-1 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
                       <span>Suggested reply</span>
-                      {selectedEmail.aiReply && (
-                        <button
-                          type="button"
-                          disabled={isSendingReply}
-                          onClick={() => sendSelectedReply(selectedEmail)}
-                          className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-                        >
-                          {isSendingReply ? "Sending…" : "Ready to send"}
-                        </button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {selectedEmail.aiReply && (
+                          <button
+                            type="button"
+                            disabled={isSendingReply}
+                            onClick={() => sendSelectedReply(selectedEmail)}
+                            className="rounded-full bg-zinc-900 px-2 py-0.5 text-[10px] font-semibold text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                          >
+                            {isSendingReply ? "Sending…" : "Ready to send"}
+                          </button>
+                        )}
+                        {selectedEmail.aiReply && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsEditingReply(true);
+                              setReplyDraft(selectedEmail.aiReply ?? "");
+                              setRefinePrompt("");
+                              appendActivity("Opened reply editor for manual refinement.");
+                            }}
+                            className="rounded-full border border-zinc-400 px-2 py-0.5 text-[10px] font-semibold text-zinc-700 transition hover:bg-zinc-100 dark:border-zinc-500 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                          >
+                            Refine my reply
+                          </button>
+                        )}
+                      </div>
                     </div>
                     {selectedEmail.aiReply ? (
-                      <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-800 dark:text-zinc-100">
+                      <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed text-zinc-800 dark:text-zinc-100">
                         {selectedEmail.aiReply}
                       </pre>
                     ) : (
@@ -547,5 +639,63 @@ export function ChatPanel({ userLabel }: ChatPanelProps) {
         </div>
       </aside>
     </div>
+      {isEditingReply && selectedEmail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-4 text-[11px] text-zinc-900 shadow-lg dark:bg-zinc-900 dark:text-zinc-50">
+            <div className="mb-2 flex items-center justify-between text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              <span>Edit reply</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsEditingReply(false);
+                  appendActivity("Closed reply editor.");
+                }}
+                className="rounded-full border border-zinc-300 px-2 py-0.5 text-[10px] font-medium text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mb-2 text-[10px] text-zinc-500 dark:text-zinc-400">
+              <div>
+                <span className="font-medium">To:</span> {selectedEmail.from}
+              </div>
+              <div>
+                <span className="font-medium">Subject:</span> {selectedEmail.subject || "(no subject)"}
+              </div>
+            </div>
+            <textarea
+              value={replyDraft}
+              onChange={(e) => setReplyDraft(e.target.value)}
+              rows={6}
+              className="mb-2 w-full rounded-md border border-zinc-300 bg-white p-2 text-[11px] text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+              placeholder="Edit your reply here before sending…"
+            />
+            <input
+              value={refinePrompt}
+              onChange={(e) => setRefinePrompt(e.target.value)}
+              className="mb-2 w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-[11px] text-zinc-900 outline-none placeholder:text-zinc-400 focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50 dark:placeholder:text-zinc-500"
+              placeholder="Optional: tell the AI how to refine this (e.g. make it shorter, more formal)…"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={isRefiningReply}
+                onClick={() => refineReplyWithAI(selectedEmail)}
+                className="rounded-full bg-zinc-900 px-3 py-1 text-[10px] font-semibold text-zinc-50 shadow-sm transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-70 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                {isRefiningReply ? "Refining…" : "Refine with AI"}
+              </button>
+              <button
+                type="button"
+                onClick={() => applyReplyDraft(selectedEmail)}
+                className="rounded-full bg-emerald-600 px-3 py-1 text-[10px] font-semibold text-emerald-50 shadow-sm transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
